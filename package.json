@@ -1,0 +1,33 @@
+{
+  "name": "webllm-fixtool",
+  "version": "1.0.0",
+  "description": "A Node.js web application that demonstrates using WebLLM for grammar correction",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test-api.js",
+    "test:api": "node test-api.js",
+    "build": "echo 'Static site - no build needed'",
+    "deploy": "echo 'Deploy to GitHub Pages manually or via GitHub Actions'"
+  },
+  "keywords": [
+    "webllm",
+    "grammar",
+    "correction",
+    "ai",
+    "nlp"
+  ],
+  "author": "Will Wade",
+  "license": "ISC",
+  "homepage": "https://willwade.github.io/webllm-fixtool/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/willwade/webllm-fixtool.git"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  }
+}
