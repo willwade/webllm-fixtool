@@ -268,18 +268,19 @@ class GrammarCorrectionApp {
         // Basic sanitization - remove potentially problematic characters
         const sanitizedText = noisyString.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
 
-        const prompt = `Fix grammar, spelling, and add missing words to make complete sentences. Language: ${locale}. Text: "${sanitizedText}"
+        // Use JSON mode for ALL models - WebLLM supports it universally
+        const prompt = `Fix the grammar and spelling in this text: "${sanitizedText}"
 
-Return your response as JSON with this exact structure:
+Example: If the text was "i want burger", you would return:
 {
   "corrections": [
-    "first corrected version",
-    "second corrected version",
-    "third corrected version"
+    "I want a burger",
+    "I want burgers",
+    "I would like a burger"
   ]
 }
 
-Provide exactly 3 different corrected versions. No explanations, just the corrections.`;
+Now fix "${sanitizedText}" and return 3 different corrected versions in the same JSON format. Language: ${locale}.`;
 
         console.log(`Correcting grammar for locale: ${locale}`);
         console.log(`Input text: ${sanitizedText}`);
@@ -289,7 +290,7 @@ Provide exactly 3 different corrected versions. No explanations, just the correc
             setTimeout(() => reject(new Error('Request timeout - the model took too long to respond')), 30000);
         });
 
-        // Use streaming with JSON mode for better UX
+        // Use streaming with JSON mode for all models
         const apiPromise = this.engine.chat.completions.create({
             messages: [
                 {
@@ -299,8 +300,8 @@ Provide exactly 3 different corrected versions. No explanations, just the correc
             ],
             temperature: 0.7,
             max_tokens: 200,
-            stream: true, // Enable streaming
-            response_format: { type: "json_object" } // Enable JSON mode
+            stream: true,
+            response_format: { type: "json_object" } // JSON mode works on all WebLLM models
         });
 
         const stream = await Promise.race([apiPromise, timeoutPromise]);
@@ -347,6 +348,16 @@ Provide exactly 3 different corrected versions. No explanations, just the correc
                 const corrections = parsed.corrections
                     .filter(correction => typeof correction === 'string' && correction.trim().length > 0)
                     .map(correction => correction.trim())
+                    .filter(correction => {
+                        // Filter out template placeholders
+                        const lower = correction.toLowerCase();
+                        return !lower.includes('first corrected') &&
+                               !lower.includes('second corrected') &&
+                               !lower.includes('third corrected') &&
+                               !lower.includes('put the') &&
+                               !lower.includes('corrected version') &&
+                               !lower.includes('placeholder');
+                    })
                     .slice(0, 3);
 
                 if (corrections.length > 0) {
@@ -371,21 +382,34 @@ Provide exactly 3 different corrected versions. No explanations, just the correc
         // Clean up the response first
         let cleanResponse = response.trim();
 
-        // Remove common prefixes that models might add
-        cleanResponse = cleanResponse.replace(/^(Here are the corrections?:?\s*|Corrected versions?:?\s*|Fixed:?\s*|The corrected versions are:?\s*)/i, '');
+        // Remove common prefixes and formatting that small models add
+        cleanResponse = cleanResponse
+            .replace(/^(Here are the corrections?:?\s*|Corrected versions?:?\s*|Fixed:?\s*|The corrected versions are:?\s*|Answer with 3 versions separated by commas:?\s*)/i, '')
+            .replace(/Option \d+[^:]*:?\s*/gi, '') // Remove "Option 1:", "Option 2 (Most Likely):", etc.
+            .replace(/\d+\.\s*/g, '') // Remove numbering "1. ", "2. ", "3. "
+            .replace(/This is the corrected version.*$/i, '') // Remove explanatory text
+            .replace(/Here are.*$/i, '') // Remove "Here are the corrections"
+            .trim();
 
         // Try different splitting methods
         let corrections = [];
 
-        // First try splitting by comma
+        // First try splitting by comma (most common)
         if (cleanResponse.includes(',')) {
             corrections = cleanResponse.split(',');
         }
-        // Try splitting by newlines if no commas
+        // Try splitting by quotes if they contain corrections
+        else if (cleanResponse.includes('"')) {
+            const matches = cleanResponse.match(/"([^"]+)"/g);
+            if (matches) {
+                corrections = matches.map(match => match.replace(/"/g, ''));
+            }
+        }
+        // Try splitting by newlines
         else if (cleanResponse.includes('\n')) {
             corrections = cleanResponse.split('\n');
         }
-        // Try splitting by periods followed by space
+        // Try splitting by periods followed by capital letter
         else if (cleanResponse.match(/\.\s+[A-Z]/)) {
             corrections = cleanResponse.split(/\.\s+(?=[A-Z])/);
         }
@@ -400,10 +424,11 @@ Provide exactly 3 different corrected versions. No explanations, just the correc
                 return correction
                     .trim()
                     .replace(/^["']|["']$/g, '')     // Remove quotes
-                    .replace(/^\d+\.\s*/, '')        // Remove numbering like "1. "
+                    .replace(/^\d+\.\s*/, '')        // Remove numbering
                     .replace(/^-\s*/, '')            // Remove dashes
                     .replace(/^[•*]\s*/, '')         // Remove bullet points
                     .replace(/\.$/, '')              // Remove trailing period
+                    .replace(/^(and\s+)?/i, '')      // Remove leading "and"
                     .trim();
             })
             .filter(correction => {
@@ -411,16 +436,11 @@ Provide exactly 3 different corrected versions. No explanations, just the correc
                        correction.length < 200 &&
                        !correction.toLowerCase().includes('unable') &&
                        !correction.toLowerCase().includes('cannot') &&
-                       !correction.toLowerCase().includes('error');
+                       !correction.toLowerCase().includes('error') &&
+                       !correction.toLowerCase().includes('option') &&
+                       correction.length > 2; // Filter out very short fragments
             })
             .slice(0, 3); // Ensure maximum of 3 options
-
-        // If we got fewer than 3, try to generate variations
-        if (corrections.length === 1 && corrections[0].length > 0) {
-            const base = corrections[0];
-            // Add the original as the primary correction
-            corrections = [base];
-        }
 
         // If no valid corrections found, return a helpful message
         if (corrections.length === 0) {

@@ -113,8 +113,9 @@ The application provides minimal REST API endpoints:
 
 ### Model Information
 
-- **Model**: SmolLM2-360M-Instruct-q4f32_1-MLC
-- **Size**: Approximately 580MB (much faster download and initialization)
+- **Models**: 5 options from 376MB to 3.7GB
+- **Smart prompting**: Automatically uses JSON mode for larger models, simple prompts for smaller ones
+- **Streaming**: Real-time response generation with progress updates
 - **Quantization**: 4-bit quantization for efficiency
 - **Performance**: Optimized for grammar correction tasks
 
