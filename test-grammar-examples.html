@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grammar Test Examples</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-case {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .input {
+            font-weight: bold;
+            color: #d32f2f;
+            margin-bottom: 10px;
+        }
+        .expected {
+            color: #388e3c;
+            margin-bottom: 10px;
+        }
+        .result {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .loading { background: #fff3cd; color: #856404; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Grammar Correction Test Cases</h1>
+    
+    <div id="status" class="hidden"></div>
+    
+    <button id="initBtn">Initialize WebLLM</button>
+    <button id="testAllBtn" disabled>Test All Examples</button>
+    
+    <div class="test-case">
+        <div class="input">Input: "Helloe veryoane!"</div>
+        <div class="expected">Expected: Hello everyone! / Hello everybody! / Hello to everyone!</div>
+        <button onclick="testExample('Helloe veryoane!', 'test1')">Test This</button>
+        <div id="test1" class="result"></div>
+    </div>
+    
+    <div class="test-case">
+        <div class="input">Input: "Whats for lynch?"</div>
+        <div class="expected">Expected: What's for lunch? / What is for lunch? / What's for dinner?</div>
+        <button onclick="testExample('Whats for lynch?', 'test2')">Test This</button>
+        <div id="test2" class="result"></div>
+    </div>
+    
+    <div class="test-case">
+        <div class="input">Input: "i want burger"</div>
+        <div class="expected">Expected: I want a burger / I want burgers / I want some burger</div>
+        <button onclick="testExample('i want burger', 'test3')">Test This</button>
+        <div id="test3" class="result"></div>
+    </div>
+    
+    <div class="test-case">
+        <div class="input">Input: "iwantburger"</div>
+        <div class="expected">Expected: I want a burger / I want burgers / I want some burger</div>
+        <button onclick="testExample('iwantburger', 'test4')">Test This</button>
+        <div id="test4" class="result"></div>
+    </div>
+
+    <script type="module">
+        import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
+        
+        let engine = null;
+        let isInitialized = false;
+        
+        const modelId = "Qwen2-0.5B-Instruct-q4f16_1-MLC";
+        
+        document.getElementById('initBtn').addEventListener('click', initializeWebLLM);
+        document.getElementById('testAllBtn').addEventListener('click', testAllExamples);
+        
+        async function initializeWebLLM() {
+            if (isInitialized) return;
+            
+            showStatus('Initializing WebLLM... This may take a few minutes.', 'loading');
+            document.getElementById('initBtn').disabled = true;
+            
+            try {
+                engine = await CreateMLCEngine(modelId, {
+                    initProgressCallback: (report) => {
+                        showStatus(`Loading: ${report.text}`, 'loading');
+                    }
+                });
+                
+                isInitialized = true;
+                document.getElementById('testAllBtn').disabled = false;
+                document.getElementById('initBtn').textContent = 'WebLLM Ready ✓';
+                document.getElementById('initBtn').style.background = '#28a745';
+                showStatus('WebLLM initialized successfully!', 'success');
+                
+            } catch (error) {
+                showStatus(`Initialization failed: ${error.message}`, 'error');
+                document.getElementById('initBtn').disabled = false;
+            }
+        }
+        
+        async function testExample(text, resultId) {
+            if (!isInitialized) {
+                alert('Please initialize WebLLM first');
+                return;
+            }
+            
+            const resultDiv = document.getElementById(resultId);
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                const prompt = `Fix grammar, spelling, and add missing words to make complete sentences. Language: en. Text: "${text}"
+
+Return your response as JSON with this exact structure:
+{
+  "corrections": [
+    "first corrected version",
+    "second corrected version",
+    "third corrected version"
+  ]
+}
+
+Provide exactly 3 different corrected versions. No explanations, just the corrections.`;
+
+                const stream = await engine.chat.completions.create({
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.7,
+                    max_tokens: 200,
+                    stream: true,
+                    response_format: { type: "json_object" }
+                });
+
+                // Collect streaming response
+                let fullResponse = '';
+                for await (const chunk of stream) {
+                    const delta = chunk.choices[0]?.delta?.content || '';
+                    fullResponse += delta;
+                }
+
+                const corrections = parseJSONCorrections(fullResponse);
+                
+                resultDiv.innerHTML = `
+                    <strong>Raw Response:</strong><br>${fullResponse}<br><br>
+                    <strong>Parsed Corrections (${corrections.length}):</strong><br>
+                    ${corrections.map((c, i) => `${i + 1}. ${c}`).join('<br>')}
+                `;
+
+            } catch (error) {
+                resultDiv.innerHTML = `Error: ${error.message}`;
+            }
+        }
+
+        function parseJSONCorrections(response) {
+            if (!response || typeof response !== 'string') {
+                return ["Unable to generate corrections"];
+            }
+
+            try {
+                let cleanResponse = response.trim();
+                const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    cleanResponse = jsonMatch[0];
+                }
+
+                const parsed = JSON.parse(cleanResponse);
+
+                if (parsed.corrections && Array.isArray(parsed.corrections)) {
+                    const corrections = parsed.corrections
+                        .filter(correction => typeof correction === 'string' && correction.trim().length > 0)
+                        .map(correction => correction.trim())
+                        .slice(0, 3);
+
+                    if (corrections.length > 0) {
+                        return corrections;
+                    }
+                }
+
+                return parseCorrections(response);
+
+            } catch (error) {
+                console.warn('Failed to parse JSON response, falling back to text parsing:', error);
+                return parseCorrections(response);
+            }
+        }
+
+        function parseCorrections(response) {
+            if (!response || typeof response !== 'string') {
+                return ["Unable to generate corrections"];
+            }
+
+            let cleanResponse = response.trim();
+            cleanResponse = cleanResponse.replace(/^(Here are the corrections?:?\s*|Corrected versions?:?\s*|Fixed:?\s*|The corrected versions are:?\s*)/i, '');
+            
+            let corrections = [];
+            
+            if (cleanResponse.includes(',')) {
+                corrections = cleanResponse.split(',');
+            } else if (cleanResponse.includes('\n')) {
+                corrections = cleanResponse.split('\n');
+            } else if (cleanResponse.match(/\.\s+[A-Z]/)) {
+                corrections = cleanResponse.split(/\.\s+(?=[A-Z])/);
+            } else {
+                corrections = [cleanResponse];
+            }
+            
+            corrections = corrections
+                .map(correction => {
+                    return correction
+                        .trim()
+                        .replace(/^["']|["']$/g, '')
+                        .replace(/^\d+\.\s*/, '')
+                        .replace(/^-\s*/, '')
+                        .replace(/^[•*]\s*/, '')
+                        .replace(/\.$/, '')
+                        .trim();
+                })
+                .filter(correction => {
+                    return correction.length > 0 && 
+                           correction.length < 200 && 
+                           !correction.toLowerCase().includes('unable') &&
+                           !correction.toLowerCase().includes('cannot') &&
+                           !correction.toLowerCase().includes('error');
+                })
+                .slice(0, 3);
+
+            if (corrections.length === 0) {
+                corrections = ["Unable to generate corrections"];
+            }
+
+            return corrections;
+        }
+        
+        async function testAllExamples() {
+            const examples = [
+                'Helloe veryoane!',
+                'Whats for lynch?',
+                'i want burger',
+                'iwantburger'
+            ];
+            
+            for (let i = 0; i < examples.length; i++) {
+                await testExample(examples[i], `test${i + 1}`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between tests
+            }
+        }
+        
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.className = type;
+            status.textContent = message;
+            status.classList.remove('hidden');
+        }
+        
+        // Make testExample global
+        window.testExample = testExample;
+    </script>
+</body>
+</html>

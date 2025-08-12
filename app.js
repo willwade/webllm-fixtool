@@ -6,7 +6,44 @@ class GrammarCorrectionApp {
         this.engine = null;
         this.isInitialized = false;
         this.isInitializing = false;
-        this.modelId = "SmolLM2-360M-Instruct-q4f32_1-MLC";
+        this.modelId = "SmolLM2-360M-Instruct-q4f16_1-MLC"; // Default to working small model
+        this.availableModels = {
+            "SmolLM2-360M-Instruct-q4f16_1-MLC": {
+                name: "SmolLM2-360M (Fastest)",
+                size: "~376MB",
+                speed: "Very Fast",
+                quality: "Basic",
+                description: "Best for slow internet"
+            },
+            "TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC": {
+                name: "TinyLlama-1.1B (Fast)",
+                size: "~697MB",
+                speed: "Fast",
+                quality: "Good",
+                description: "Good balance of speed/quality"
+            },
+            "Llama-3.2-1B-Instruct-q4f16_1-MLC": {
+                name: "Llama-3.2-1B (Balanced)",
+                size: "~879MB",
+                speed: "Medium",
+                quality: "Very Good",
+                description: "Latest Llama model, excellent grammar"
+            },
+            "gemma-2b-it-q4f16_1-MLC": {
+                name: "Gemma-2B (High Quality)",
+                size: "~1.5GB",
+                speed: "Slower",
+                quality: "Excellent",
+                description: "Google's model, great for grammar"
+            },
+            "Phi-3-mini-4k-instruct-q4f16_1-MLC": {
+                name: "Phi-3-Mini (Best Quality)",
+                size: "~3.7GB",
+                speed: "Slow",
+                quality: "Excellent",
+                description: "Microsoft's model, best results"
+            }
+        };
         this.initializeElements();
         this.attachEventListeners();
         this.loadSampleTexts();
@@ -19,17 +56,62 @@ class GrammarCorrectionApp {
         this.correctBtn = document.getElementById('correctBtn');
         this.form = document.getElementById('correctionForm');
         this.localeSelect = document.getElementById('locale');
+        this.modelSelect = document.getElementById('modelSelect');
         this.noisyStringTextarea = document.getElementById('noisyString');
         this.resultsDiv = document.getElementById('results');
         this.correctionsDiv = document.getElementById('corrections');
+        this.populateModelDropdown();
     }
 
     attachEventListeners() {
         this.initializeBtn.addEventListener('click', () => this.initializeWebLLM());
         this.form.addEventListener('submit', (e) => this.handleSubmit(e));
-        
+
         // Add some sample texts for different languages
         this.localeSelect.addEventListener('change', () => this.updateSampleText());
+
+        // Handle model selection changes
+        this.modelSelect.addEventListener('change', () => this.handleModelChange());
+    }
+
+    populateModelDropdown() {
+        if (!this.modelSelect) return;
+
+        // Clear existing options
+        this.modelSelect.innerHTML = '';
+
+        // Add model options
+        Object.entries(this.availableModels).forEach(([modelId, info]) => {
+            const option = document.createElement('option');
+            option.value = modelId;
+            option.textContent = `${info.name} - ${info.size}`;
+            option.title = `${info.description}\nQuality: ${info.quality}\nSpeed: ${info.speed}\nSize: ${info.size}`;
+
+            if (modelId === this.modelId) {
+                option.selected = true;
+            }
+
+            this.modelSelect.appendChild(option);
+        });
+    }
+
+    handleModelChange() {
+        const newModelId = this.modelSelect.value;
+        if (newModelId !== this.modelId) {
+            this.modelId = newModelId;
+
+            // Reset initialization state
+            this.isInitialized = false;
+            this.engine = null;
+            this.correctBtn.disabled = true;
+            this.initializeBtn.disabled = false;
+            this.initializeBtn.textContent = 'Initialize WebLLM';
+            this.initializeBtn.style.background = '';
+            this.initializeBtn.style.color = '';
+
+            const modelInfo = this.availableModels[newModelId];
+            this.showStatus(`Model changed to ${modelInfo.name}. Click Initialize to load the new model.`, 'success');
+        }
     }
 
     loadSampleTexts() {
@@ -89,24 +171,34 @@ class GrammarCorrectionApp {
 
         this.isInitializing = true;
         this.initializeBtn.disabled = true;
-        this.showStatus('Initializing WebLLM engine... This may take a few minutes on first run.', 'loading');
+        this.modelSelect.disabled = true;
+
+        const modelInfo = this.availableModels[this.modelId];
+        this.showStatus(`Initializing ${modelInfo.name} (${modelInfo.size})... This may take a few minutes.`, 'loading');
 
         try {
-            console.log("Initializing WebLLM engine...");
+            console.log(`Initializing WebLLM engine with model: ${this.modelId}`);
 
-            this.engine = await CreateMLCEngine(this.modelId, {
+            // Add timeout for initialization
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Initialization timeout - please try a smaller model or check your internet connection')), 300000); // 5 minutes
+            });
+
+            const initPromise = CreateMLCEngine(this.modelId, {
                 initProgressCallback: (report) => {
                     console.log(`Loading progress: ${report.text}`);
-                    this.showStatus(`Loading model: ${report.text}`, 'loading');
+                    this.showStatus(`Loading ${modelInfo.name}: ${report.text}`, 'loading');
                 }
             });
 
+            this.engine = await Promise.race([initPromise, timeoutPromise]);
+
             this.isInitialized = true;
             this.correctBtn.disabled = false;
-            this.initializeBtn.textContent = 'WebLLM Ready ✓';
+            this.initializeBtn.textContent = `${modelInfo.name} Ready ✓`;
             this.initializeBtn.style.background = '#28a745';
             this.initializeBtn.style.color = 'white';
-            this.showStatus('WebLLM engine initialized successfully! You can now correct grammar.', 'success');
+            this.showStatus(`${modelInfo.name} initialized successfully! You can now correct grammar.`, 'success');
 
             setTimeout(() => {
                 this.hideStatus();
@@ -116,14 +208,17 @@ class GrammarCorrectionApp {
             console.error('Initialization error:', error);
             let errorMessage = error.message;
 
-            if (error.message.includes('WebGPU')) {
+            if (error.message.includes('timeout')) {
+                errorMessage = `Model loading timed out. Try a smaller model or check your internet connection. Current model: ${modelInfo.size}`;
+            } else if (error.message.includes('WebGPU')) {
                 errorMessage = "WebGPU is not available. Please use a compatible browser (Chrome 113+, Edge 113+) and ensure WebGPU is enabled.";
-            } else if (error.message.includes('model')) {
-                errorMessage = `Model '${this.modelId}' could not be loaded. Please check your internet connection and try again.`;
+            } else if (error.message.includes('model') || error.message.includes('fetch')) {
+                errorMessage = `Model '${modelInfo.name}' could not be loaded. Please check your internet connection or try a smaller model.`;
             }
 
             this.showStatus(`Initialization failed: ${errorMessage}`, 'error');
             this.initializeBtn.disabled = false;
+            this.modelSelect.disabled = false;
         } finally {
             this.isInitializing = false;
         }
@@ -171,7 +266,18 @@ class GrammarCorrectionApp {
         // Basic sanitization - remove potentially problematic characters
         const sanitizedText = noisyString.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
 
-        const prompt = `Fix grammar. Return ONLY 1-3 corrected versions separated by commas. No explanations. Language: ${locale}. Text: "${sanitizedText}"`;
+        const prompt = `Fix grammar, spelling, and add missing words to make complete sentences. Language: ${locale}. Text: "${sanitizedText}"
+
+Return your response as JSON with this exact structure:
+{
+  "corrections": [
+    "first corrected version",
+    "second corrected version",
+    "third corrected version"
+  ]
+}
+
+Provide exactly 3 different corrected versions. No explanations, just the corrections.`;
 
         console.log(`Correcting grammar for locale: ${locale}`);
         console.log(`Input text: ${sanitizedText}`);
@@ -181,6 +287,7 @@ class GrammarCorrectionApp {
             setTimeout(() => reject(new Error('Request timeout - the model took too long to respond')), 30000);
         });
 
+        // Use streaming with JSON mode for better UX
         const apiPromise = this.engine.chat.completions.create({
             messages: [
                 {
@@ -188,24 +295,70 @@ class GrammarCorrectionApp {
                     content: prompt
                 }
             ],
-            temperature: 0.1, // Very low temperature for consistent, focused responses
-            max_tokens: 100,   // Shorter limit to prevent explanations
+            temperature: 0.7,
+            max_tokens: 200,
+            stream: true, // Enable streaming
+            response_format: { type: "json_object" } // Enable JSON mode
         });
 
-        const response = await Promise.race([apiPromise, timeoutPromise]);
+        const stream = await Promise.race([apiPromise, timeoutPromise]);
 
-        if (!response || !response.choices || response.choices.length === 0) {
-            throw new Error("Invalid response from the model");
+        // Collect streaming response
+        let fullResponse = '';
+        for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content || '';
+            fullResponse += delta;
+
+            // Show streaming progress
+            if (delta) {
+                this.showStatus(`Generating corrections... ${fullResponse.length} characters`, 'loading');
+            }
         }
 
-        const correctedText = response.choices[0].message.content.trim();
-        console.log(`Raw response: ${correctedText}`);
+        console.log(`Raw streaming response: ${fullResponse}`);
 
-        // Parse the response to extract up to 3 options
-        const corrections = this.parseCorrections(correctedText);
+        // Parse JSON response
+        const corrections = this.parseJSONCorrections(fullResponse);
 
         console.log(`Parsed corrections: ${JSON.stringify(corrections)}`);
         return corrections;
+    }
+
+    parseJSONCorrections(response) {
+        if (!response || typeof response !== 'string') {
+            return ["Unable to generate corrections"];
+        }
+
+        try {
+            // Clean up the response - sometimes models add extra text
+            let cleanResponse = response.trim();
+
+            // Extract JSON if it's wrapped in other text
+            const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                cleanResponse = jsonMatch[0];
+            }
+
+            const parsed = JSON.parse(cleanResponse);
+
+            if (parsed.corrections && Array.isArray(parsed.corrections)) {
+                const corrections = parsed.corrections
+                    .filter(correction => typeof correction === 'string' && correction.trim().length > 0)
+                    .map(correction => correction.trim())
+                    .slice(0, 3);
+
+                if (corrections.length > 0) {
+                    return corrections;
+                }
+            }
+
+            // Fallback if JSON structure is different
+            return this.parseCorrections(response);
+
+        } catch (error) {
+            console.warn('Failed to parse JSON response, falling back to text parsing:', error);
+            return this.parseCorrections(response);
+        }
     }
 
     parseCorrections(response) {
@@ -217,31 +370,59 @@ class GrammarCorrectionApp {
         let cleanResponse = response.trim();
 
         // Remove common prefixes that models might add
-        cleanResponse = cleanResponse.replace(/^(Here are the corrections?:?\s*|Corrected versions?:?\s*|Fixed:?\s*)/i, '');
+        cleanResponse = cleanResponse.replace(/^(Here are the corrections?:?\s*|Corrected versions?:?\s*|Fixed:?\s*|The corrected versions are:?\s*)/i, '');
 
-        // Split by comma and clean up each option
-        let corrections = cleanResponse
-            .split(',')
+        // Try different splitting methods
+        let corrections = [];
+
+        // First try splitting by comma
+        if (cleanResponse.includes(',')) {
+            corrections = cleanResponse.split(',');
+        }
+        // Try splitting by newlines if no commas
+        else if (cleanResponse.includes('\n')) {
+            corrections = cleanResponse.split('\n');
+        }
+        // Try splitting by periods followed by space
+        else if (cleanResponse.match(/\.\s+[A-Z]/)) {
+            corrections = cleanResponse.split(/\.\s+(?=[A-Z])/);
+        }
+        // If no clear separators, treat as single correction
+        else {
+            corrections = [cleanResponse];
+        }
+
+        // Clean up each correction
+        corrections = corrections
             .map(correction => {
-                // Remove quotes, extra whitespace, and common prefixes
                 return correction
                     .trim()
-                    .replace(/^["']|["']$/g, '')
-                    .replace(/^\d+\.\s*/, '') // Remove numbering like "1. "
-                    .replace(/^-\s*/, '')     // Remove dashes
+                    .replace(/^["']|["']$/g, '')     // Remove quotes
+                    .replace(/^\d+\.\s*/, '')        // Remove numbering like "1. "
+                    .replace(/^-\s*/, '')            // Remove dashes
+                    .replace(/^[•*]\s*/, '')         // Remove bullet points
+                    .replace(/\.$/, '')              // Remove trailing period
                     .trim();
             })
-            .filter(correction => correction.length > 0 && correction.length < 200) // Filter out very long responses
+            .filter(correction => {
+                return correction.length > 0 &&
+                       correction.length < 200 &&
+                       !correction.toLowerCase().includes('unable') &&
+                       !correction.toLowerCase().includes('cannot') &&
+                       !correction.toLowerCase().includes('error');
+            })
             .slice(0, 3); // Ensure maximum of 3 options
 
-        // If no valid corrections found, try to extract the first sentence
+        // If we got fewer than 3, try to generate variations
+        if (corrections.length === 1 && corrections[0].length > 0) {
+            const base = corrections[0];
+            // Add the original as the primary correction
+            corrections = [base];
+        }
+
+        // If no valid corrections found, return a helpful message
         if (corrections.length === 0) {
-            const firstSentence = cleanResponse.split(/[.!?]/)[0].trim();
-            if (firstSentence.length > 0 && firstSentence.length < 200) {
-                corrections = [firstSentence];
-            } else {
-                corrections = ["Unable to generate corrections"];
-            }
+            corrections = ["Unable to generate corrections"];
         }
 
         return corrections;

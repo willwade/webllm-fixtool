@@ -221,6 +221,16 @@
 
             <form id="correctionForm">
                 <div class="form-group">
+                    <label for="modelSelect">AI Model (choose based on your internet speed):</label>
+                    <select id="modelSelect">
+                        <!-- Options populated by JavaScript -->
+                    </select>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        💡 Tip: Start with the fastest model if you have slow internet
+                    </small>
+                </div>
+
+                <div class="form-group">
                     <label for="locale">Language:</label>
                     <select id="locale" required>
                         <option value="">Select a language...</option>
