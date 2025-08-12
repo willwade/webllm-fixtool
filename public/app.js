@@ -10,7 +10,7 @@ class GrammarCorrectionApp {
         this.availableModels = {
             "SmolLM2-360M-Instruct-q4f16_1-MLC": {
                 name: "SmolLM2-360M (Fastest)",
-                size: "~376MB",
+                size: "~192MB",
                 speed: "Very Fast",
                 quality: "Basic",
                 description: "Best for slow internet"
