@@ -17,7 +17,7 @@ class GrammarCorrectionApp {
             },
             "TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC": {
                 name: "TinyLlama-1.1B (Fast)",
-                size: "~697MB",
+                size: "~600MB",
                 speed: "Fast",
                 quality: "Good",
                 description: "Good balance of speed/quality"
