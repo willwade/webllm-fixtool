@@ -6,7 +6,7 @@ class GrammarCorrectionApp {
         this.engine = null;
         this.isInitialized = false;
         this.isInitializing = false;
-        this.modelId = "SmolLM2-360M-Instruct-q4f16_1-MLC"; // Default to working small model
+        this.modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC"; // Default to more capable model for better JSON following
         this.availableModels = {
             "SmolLM2-360M-Instruct-q4f16_1-MLC": {
                 name: "SmolLM2-360M (Fastest)",
@@ -328,8 +328,8 @@ Rules:
                     content: prompt
                 }
             ],
-            temperature: 0.7,
-            max_tokens: 200,
+            temperature: 0.3, // Lower temperature for more consistent JSON output
+            max_tokens: 150,  // Reduced to prevent repetitive output
             stream: true,
             response_format: { type: "json_object" } // JSON mode works on all WebLLM models
         });
@@ -351,13 +351,13 @@ Rules:
         console.log(`Raw streaming response: ${fullResponse}`);
 
         // Parse JSON response
-        const corrections = this.parseJSONCorrections(fullResponse);
+        const corrections = this.parseJSONCorrections(fullResponse, sanitizedText);
 
         console.log(`Parsed corrections: ${JSON.stringify(corrections)}`);
         return corrections;
     }
 
-    parseJSONCorrections(response) {
+    parseJSONCorrections(response, originalText = '') {
         if (!response || typeof response !== 'string') {
             return ["Unable to generate corrections"];
         }
@@ -380,14 +380,16 @@ Rules:
                     .filter(correction => typeof correction === 'string' && correction.trim().length > 0)
                     .map(correction => correction.trim())
                     .filter(correction => {
-                        // Filter out template placeholders
+                        // Filter out template placeholders and repetitive text
                         const lower = correction.toLowerCase();
                         return !lower.includes('first corrected') &&
                                !lower.includes('second corrected') &&
                                !lower.includes('third corrected') &&
                                !lower.includes('put the') &&
                                !lower.includes('corrected version') &&
-                               !lower.includes('placeholder');
+                               !lower.includes('placeholder') &&
+                               !lower.includes('version here') &&
+                               correction !== originalText; // Filter out unchanged text
                     })
                     .slice(0, 3);
 
