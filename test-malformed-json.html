@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Malformed JSON Parsing</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .test { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .input { color: #d32f2f; font-weight: bold; }
+        .output { color: #388e3c; margin-top: 10px; }
+        .parsed { background: white; padding: 10px; margin-top: 10px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Malformed JSON Parsing Test</h1>
+    
+    <div class="test">
+        <div class="input">Malformed JSON (duplicate keys):</div>
+        <div>{"corrections": [{"corrected": "Yo quiero una hamburguesa", "corrected": "Quiero hamburguesas", "corrected": "Me gustaría una hamburguesa"}]}</div>
+        <div class="parsed" id="test1"></div>
+    </div>
+    
+    <div class="test">
+        <div class="input">Valid JSON (expected format):</div>
+        <div>{"corrections": ["Yo quiero una hamburguesa", "Quiero hamburguesas", "Me gustaría una hamburguesa"]}</div>
+        <div class="parsed" id="test2"></div>
+    </div>
+    
+    <div class="test">
+        <div class="input">Malformed JSON in raw text:</div>
+        <div>Some text before {"corrected": "First correction", "corrected": "Second correction"} some text after</div>
+        <div class="parsed" id="test3"></div>
+    </div>
+
+    <script>
+        function parseJSONCorrections(response) {
+            if (!response || typeof response !== 'string') {
+                return ["Unable to generate corrections"];
+            }
+
+            try {
+                // Clean up the response - sometimes models add extra text
+                let cleanResponse = response.trim();
+                
+                // Extract JSON if it's wrapped in other text
+                const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    cleanResponse = jsonMatch[0];
+                }
+
+                const parsed = JSON.parse(cleanResponse);
+                
+                // Handle standard array format: {"corrections": ["text1", "text2", "text3"]}
+                if (parsed.corrections && Array.isArray(parsed.corrections)) {
+                    const corrections = parsed.corrections
+                        .filter(correction => typeof correction === 'string' && correction.trim().length > 0)
+                        .map(correction => correction.trim())
+                        .slice(0, 3);
+                    
+                    if (corrections.length > 0) {
+                        return corrections;
+                    }
+                }
+                
+                // Handle malformed object format: {"corrections": [{"corrected": "text1", "corrected": "text2"}]}
+                if (parsed.corrections && Array.isArray(parsed.corrections) && parsed.corrections.length > 0) {
+                    const firstItem = parsed.corrections[0];
+                    if (typeof firstItem === 'object' && firstItem.corrected) {
+                        // Extract all "corrected" values from the malformed object
+                        const rawText = JSON.stringify(firstItem);
+                        const correctedMatches = rawText.match(/"corrected":\s*"([^"]+)"/g);
+                        if (correctedMatches) {
+                            const corrections = correctedMatches
+                                .map(match => match.replace(/"corrected":\s*"([^"]+)"/, '$1'))
+                                .filter(correction => correction.trim().length > 0)
+                                .slice(0, 3);
+                            
+                            if (corrections.length > 0) {
+                                return corrections;
+                            }
+                        }
+                    }
+                }
+                
+                return ["Could not parse corrections"];
+                
+            } catch (error) {
+                console.warn('Failed to parse JSON response, trying manual extraction:', error);
+                
+                // Try to extract corrections from malformed JSON manually
+                const correctedMatches = response.match(/"corrected":\s*"([^"]+)"/g);
+                if (correctedMatches) {
+                    const corrections = correctedMatches
+                        .map(match => match.replace(/"corrected":\s*"([^"]+)"/, '$1'))
+                        .filter(correction => correction.trim().length > 0)
+                        .slice(0, 3);
+                    
+                    if (corrections.length > 0) {
+                        return corrections;
+                    }
+                }
+                
+                return ["Parse error: " + error.message];
+            }
+        }
+
+        // Test the parsing
+        const tests = [
+            '{"corrections": [{"corrected": "Yo quiero una hamburguesa", "corrected": "Quiero hamburguesas", "corrected": "Me gustaría una hamburguesa"}]}',
+            '{"corrections": ["Yo quiero una hamburguesa", "Quiero hamburguesas", "Me gustaría una hamburguesa"]}',
+            'Some text before {"corrected": "First correction", "corrected": "Second correction"} some text after'
+        ];
+
+        tests.forEach((test, index) => {
+            const parsed = parseJSONCorrections(test);
+            const element = document.getElementById(`test${index + 1}`);
+            element.innerHTML = `
+                <strong>Parsed Result:</strong><br>
+                ${parsed.map((correction, i) => `${i + 1}. "${correction}"`).join('<br>')}
+                <br><br>
+                <strong>Count:</strong> ${parsed.length} corrections
+                <br><strong>Status:</strong> ${parsed[0].includes('error') || parsed[0].includes('Unable') ? '❌ Failed' : '✅ Success'}
+            `;
+        });
+    </script>
+</body>
+</html>

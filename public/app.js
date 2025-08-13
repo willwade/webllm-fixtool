@@ -279,44 +279,38 @@ class GrammarCorrectionApp {
         console.log(`Correcting grammar for locale: ${locale}`);
         console.log(`Input text: ${sanitizedText}`);
 
-        // Create language-specific examples and instructions
-        const languageExamples = {
-            'en': {
-                example: 'i want burger',
-                corrections: ['I want a burger', 'I want burgers', 'I would like a burger']
-            },
-            'es': {
-                example: 'yo quiero hamburguesa',
-                corrections: ['Yo quiero una hamburguesa', 'Quiero hamburguesas', 'Me gustaría una hamburguesa']
-            },
-            'fr': {
-                example: 'je veux burger',
-                corrections: ['Je veux un burger', 'Je veux des burgers', 'J\'aimerais un burger']
-            },
-            'de': {
-                example: 'ich will burger',
-                corrections: ['Ich will einen Burger', 'Ich will Burger', 'Ich möchte einen Burger']
-            },
-            'it': {
-                example: 'io voglio burger',
-                corrections: ['Io voglio un burger', 'Voglio dei burger', 'Vorrei un burger']
-            }
+        // Create a simple, generic prompt without specific examples that could confuse the model
+        const languageNames = {
+            'en': 'English',
+            'es': 'Spanish',
+            'fr': 'French',
+            'de': 'German',
+            'it': 'Italian',
+            'pt': 'Portuguese',
+            'ru': 'Russian',
+            'ja': 'Japanese',
+            'ko': 'Korean',
+            'zh': 'Chinese'
         };
 
-        const langExample = languageExamples[locale] || languageExamples['en'];
+        const languageName = languageNames[locale] || 'English';
 
-        const prompt = `Fix the grammar and spelling in this ${locale === 'en' ? 'English' : locale} text: "${sanitizedText}"
+        const prompt = `You are a ${languageName} grammar correction assistant. Fix the grammar, spelling, and punctuation in this text: "${sanitizedText}"
 
-Example: If the text was "${langExample.example}", you would return:
+Return exactly 3 different corrected versions as JSON:
 {
   "corrections": [
-    "${langExample.corrections[0]}",
-    "${langExample.corrections[1]}",
-    "${langExample.corrections[2]}"
+    "first corrected version here",
+    "second corrected version here",
+    "third corrected version here"
   ]
 }
 
-Now fix "${sanitizedText}" and return 3 different corrected versions in the same JSON format. Make sure all corrections are in ${locale === 'en' ? 'English' : locale} language.`;
+Rules:
+- Fix ONLY the text "${sanitizedText}" (not any examples)
+- All corrections must be in ${languageName}
+- Provide 3 different ways to correct the same text
+- Return only valid JSON, no extra text`;
 
         console.log(`Correcting grammar for locale: ${locale}`);
         console.log(`Input text: ${sanitizedText}`);
@@ -380,6 +374,7 @@ Now fix "${sanitizedText}" and return 3 different corrected versions in the same
 
             const parsed = JSON.parse(cleanResponse);
 
+            // Handle standard array format: {"corrections": ["text1", "text2", "text3"]}
             if (parsed.corrections && Array.isArray(parsed.corrections)) {
                 const corrections = parsed.corrections
                     .filter(correction => typeof correction === 'string' && correction.trim().length > 0)
@@ -401,11 +396,51 @@ Now fix "${sanitizedText}" and return 3 different corrected versions in the same
                 }
             }
 
+            // Handle malformed object format: {"corrections": [{"corrected": "text1", "corrected": "text2"}]}
+            if (parsed.corrections && Array.isArray(parsed.corrections) && parsed.corrections.length > 0) {
+                const firstItem = parsed.corrections[0];
+                if (typeof firstItem === 'object' && firstItem.corrected) {
+                    // Extract all "corrected" values from the malformed object
+                    const rawText = JSON.stringify(firstItem);
+                    const correctedMatches = rawText.match(/"corrected":\s*"([^"]+)"/g);
+                    if (correctedMatches) {
+                        const corrections = correctedMatches
+                            .map(match => match.replace(/"corrected":\s*"([^"]+)"/, '$1'))
+                            .filter(correction => correction.trim().length > 0)
+                            .slice(0, 3);
+
+                        if (corrections.length > 0) {
+                            return corrections;
+                        }
+                    }
+                }
+            }
+
+            // Handle direct object format: {"corrected": "text1", "corrected": "text2"} (invalid JSON but try to extract)
+            if (parsed.corrected) {
+                // This case shouldn't happen with valid JSON, but let's handle it
+                return [parsed.corrected].slice(0, 3);
+            }
+
             // Fallback if JSON structure is different
             return this.parseCorrections(response);
 
         } catch (error) {
             console.warn('Failed to parse JSON response, falling back to text parsing:', error);
+
+            // Try to extract corrections from malformed JSON manually
+            const correctedMatches = response.match(/"corrected":\s*"([^"]+)"/g);
+            if (correctedMatches) {
+                const corrections = correctedMatches
+                    .map(match => match.replace(/"corrected":\s*"([^"]+)"/, '$1'))
+                    .filter(correction => correction.trim().length > 0)
+                    .slice(0, 3);
+
+                if (corrections.length > 0) {
+                    return corrections;
+                }
+            }
+
             return this.parseCorrections(response);
         }
     }
