@@ -265,22 +265,58 @@ class GrammarCorrectionApp {
     }
 
     async correctGrammar(locale, noisyString) {
+        // Reset chat to avoid "module disposed" errors
+        try {
+            await this.engine.resetChat();
+            console.log('Chat session reset successfully');
+        } catch (error) {
+            console.warn('Failed to reset chat, continuing anyway:', error);
+        }
+
         // Basic sanitization - remove potentially problematic characters
         const sanitizedText = noisyString.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
 
-        // Use JSON mode for ALL models - WebLLM supports it universally
-        const prompt = `Fix the grammar and spelling in this text: "${sanitizedText}"
+        console.log(`Correcting grammar for locale: ${locale}`);
+        console.log(`Input text: ${sanitizedText}`);
 
-Example: If the text was "i want burger", you would return:
+        // Create language-specific examples and instructions
+        const languageExamples = {
+            'en': {
+                example: 'i want burger',
+                corrections: ['I want a burger', 'I want burgers', 'I would like a burger']
+            },
+            'es': {
+                example: 'yo quiero hamburguesa',
+                corrections: ['Yo quiero una hamburguesa', 'Quiero hamburguesas', 'Me gustaría una hamburguesa']
+            },
+            'fr': {
+                example: 'je veux burger',
+                corrections: ['Je veux un burger', 'Je veux des burgers', 'J\'aimerais un burger']
+            },
+            'de': {
+                example: 'ich will burger',
+                corrections: ['Ich will einen Burger', 'Ich will Burger', 'Ich möchte einen Burger']
+            },
+            'it': {
+                example: 'io voglio burger',
+                corrections: ['Io voglio un burger', 'Voglio dei burger', 'Vorrei un burger']
+            }
+        };
+
+        const langExample = languageExamples[locale] || languageExamples['en'];
+
+        const prompt = `Fix the grammar and spelling in this ${locale === 'en' ? 'English' : locale} text: "${sanitizedText}"
+
+Example: If the text was "${langExample.example}", you would return:
 {
   "corrections": [
-    "I want a burger",
-    "I want burgers",
-    "I would like a burger"
+    "${langExample.corrections[0]}",
+    "${langExample.corrections[1]}",
+    "${langExample.corrections[2]}"
   ]
 }
 
-Now fix "${sanitizedText}" and return 3 different corrected versions in the same JSON format. Language: ${locale}.`;
+Now fix "${sanitizedText}" and return 3 different corrected versions in the same JSON format. Make sure all corrections are in ${locale === 'en' ? 'English' : locale} language.`;
 
         console.log(`Correcting grammar for locale: ${locale}`);
         console.log(`Input text: ${sanitizedText}`);

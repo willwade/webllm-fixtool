@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test SmolLM2 Response Parsing</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .test { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .input { color: #d32f2f; font-weight: bold; }
+        .output { color: #388e3c; margin-top: 10px; }
+        .parsed { background: white; padding: 10px; margin-top: 10px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 SmolLM2 Response Parsing Test</h1>
+    
+    <div class="test">
+        <div class="input">Raw SmolLM2 Response:</div>
+        <div>"Hi andrew how you?" 2. "Hi andrew how you?" 3. "Hi how you andrew?" This is the corrected version of the text</div>
+        <div class="parsed" id="test1"></div>
+    </div>
+    
+    <div class="test">
+        <div class="input">Another Raw Response:</div>
+        <div>Option 1 (Most Likely): "Hi Option 2: andrew how you?" 2. "Hi andrew how you?" 3. "Hi Option 3: how you andrew?" This is the corrected version of the text</div>
+        <div class="parsed" id="test2"></div>
+    </div>
+    
+    <div class="test">
+        <div class="input">Simple Comma Response:</div>
+        <div>Hello everyone, Hello everybody, Hello to everyone</div>
+        <div class="parsed" id="test3"></div>
+    </div>
+
+    <script>
+        function parseCorrections(response) {
+            if (!response || typeof response !== 'string') {
+                return ["Unable to generate corrections"];
+            }
+
+            // Clean up the response first
+            let cleanResponse = response.trim();
+            
+            // Remove common prefixes and formatting that small models add
+            cleanResponse = cleanResponse
+                .replace(/^(Here are the corrections?:?\s*|Corrected versions?:?\s*|Fixed:?\s*|The corrected versions are:?\s*|Answer with 3 versions separated by commas:?\s*)/i, '')
+                .replace(/Option \d+[^:]*:?\s*/gi, '') // Remove "Option 1:", "Option 2 (Most Likely):", etc.
+                .replace(/\d+\.\s*/g, '') // Remove numbering "1. ", "2. ", "3. "
+                .replace(/This is the corrected version.*$/i, '') // Remove explanatory text
+                .replace(/Here are.*$/i, '') // Remove "Here are the corrections"
+                .trim();
+            
+            // Try different splitting methods
+            let corrections = [];
+            
+            // First try splitting by comma (most common)
+            if (cleanResponse.includes(',')) {
+                corrections = cleanResponse.split(',');
+            }
+            // Try splitting by quotes if they contain corrections
+            else if (cleanResponse.includes('"')) {
+                const matches = cleanResponse.match(/"([^"]+)"/g);
+                if (matches) {
+                    corrections = matches.map(match => match.replace(/"/g, ''));
+                }
+            }
+            // Try splitting by newlines
+            else if (cleanResponse.includes('\n')) {
+                corrections = cleanResponse.split('\n');
+            }
+            // Try splitting by periods followed by capital letter
+            else if (cleanResponse.match(/\.\s+[A-Z]/)) {
+                corrections = cleanResponse.split(/\.\s+(?=[A-Z])/);
+            }
+            // If no clear separators, treat as single correction
+            else {
+                corrections = [cleanResponse];
+            }
+            
+            // Clean up each correction
+            corrections = corrections
+                .map(correction => {
+                    return correction
+                        .trim()
+                        .replace(/^["']|["']$/g, '')     // Remove quotes
+                        .replace(/^\d+\.\s*/, '')        // Remove numbering
+                        .replace(/^-\s*/, '')            // Remove dashes
+                        .replace(/^[•*]\s*/, '')         // Remove bullet points
+                        .replace(/\.$/, '')              // Remove trailing period
+                        .replace(/^(and\s+)?/i, '')      // Remove leading "and"
+                        .trim();
+                })
+                .filter(correction => {
+                    return correction.length > 0 && 
+                           correction.length < 200 && 
+                           !correction.toLowerCase().includes('unable') &&
+                           !correction.toLowerCase().includes('cannot') &&
+                           !correction.toLowerCase().includes('error') &&
+                           !correction.toLowerCase().includes('option') &&
+                           correction.length > 2; // Filter out very short fragments
+                })
+                .slice(0, 3); // Ensure maximum of 3 options
+
+            // If no valid corrections found, return a helpful message
+            if (corrections.length === 0) {
+                corrections = ["Unable to generate corrections"];
+            }
+
+            return corrections;
+        }
+
+        // Test the parsing
+        const tests = [
+            '"Hi andrew how you?" 2. "Hi andrew how you?" 3. "Hi how you andrew?" This is the corrected version of the text',
+            'Option 1 (Most Likely): "Hi Option 2: andrew how you?" 2. "Hi andrew how you?" 3. "Hi Option 3: how you andrew?" This is the corrected version of the text',
+            'Hello everyone, Hello everybody, Hello to everyone'
+        ];
+
+        tests.forEach((test, index) => {
+            const parsed = parseCorrections(test);
+            const element = document.getElementById(`test${index + 1}`);
+            element.innerHTML = `
+                <strong>Parsed Result:</strong><br>
+                ${parsed.map((correction, i) => `${i + 1}. "${correction}"`).join('<br>')}
+                <br><br>
+                <strong>Count:</strong> ${parsed.length} corrections
+            `;
+        });
+    </script>
+</body>
+</html>
